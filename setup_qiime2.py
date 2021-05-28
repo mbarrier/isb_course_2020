@@ -20,7 +20,7 @@ MINICONDA_PATH = (
     "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
 )
 QIIME_YAML_URL = (
-    "https://data.qiime2.org/distro/core/qiime2-2020.8-py36-linux-conda.yml"
+    "https://data.qiime2.org/distro/core/qiime2-2021.4-py38-linux-conda.yml"
 )
 QIIME_YAML = os.path.basename(QIIME_YAML_URL)
 
@@ -47,6 +47,18 @@ def run_and_check(args, check, message, failure, success, console=con):
         console.log("[red]%s[/red]" % failure, out)
         cleanup()
         sys.exit(1)
+
+
+def _hack_in_the_plugins():
+    """Add the plugins to QIIME."""
+    import qiime2.sdk as sdk
+    from importlib.metadata import entry_points
+
+    pm = sdk.PluginManager(add_plugins=False)
+    for entry in entry_points()["qiime2.plugins"]:
+        plugin = entry.load()
+        package = entry.value.split(':')[0].split('.')[0]
+        pm.add_plugin(plugin, package, entry.name)
 
 
 if __name__ == "__main__":
@@ -80,7 +92,7 @@ if __name__ == "__main__":
 
         run_and_check(
             ["conda", "env", "update", "-n", "base", "--file",
-             "qiime2-2020.8-py36-linux-conda.yml"],
+             "qiime2-2021.4-py38-linux-conda.yml"],
             "To activate this environment, use",
             ":mag: Installing Qiime 2. This may take a little bit.\n :clock1:",
             "could not install Qiime 2 :sob:",
@@ -88,9 +100,6 @@ if __name__ == "__main__":
         )
     else:
         con.log(":mag: Qiime 2 is already installed. Skipped.")
-
-    sys.path.append("/usr/local/lib/python3.6/site-packages")
-    con.log(":mag: Fixed import paths to include Qiime 2.")
 
     run_and_check(
         ["qiime", "info"],
@@ -100,13 +109,26 @@ if __name__ == "__main__":
         ":bar_chart: Qiime 2 command line looks good :tada:"
     )
 
-    con.log(":bar_chart: Checking if Qiime 2 import works...")
-    try:
-        import qiime2  # noqa
-    except Exception:
-        con.log("[red]Qiime 2 can not be imported :sob:[/red]")
-        sys.exit(1)
-    con.log("[blue]:bar_chart: Qiime 2 can be imported :tada:[/blue]")
+    if sys.version_info[0:2] == (3, 8):
+        sys.path.append("/usr/local/lib/python3.8/site-packages")
+        con.log(":mag: Fixed import paths to include Qiime 2.")
+
+        con.log(":bar_chart: Checking if Qiime 2 import works...")
+        try:
+            import qiime2  # noqa
+        except Exception:
+            con.log("[red]Qiime 2 can not be imported :sob:[/red]")
+            sys.exit(1)
+        con.log("[blue]:bar_chart: Qiime 2 can be imported :tada:[/blue]")
+
+        con.log(":bar_chart: Setting up QIIME 2 plugins...")
+        try:
+            _hack_in_the_plugins()
+            from qiime2.plugins import feature_table # noqa
+        except Exception:
+            con.log("[red]Could not add the plugins :sob:[/red]")
+            sys.exit(1)
+        con.log("[blue]:bar_chart: Plugins are working :tada:[/blue]")
 
     cleanup()
 
